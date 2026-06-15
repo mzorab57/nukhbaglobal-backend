@@ -1,0 +1,322 @@
+NUKHBAGLOBAL
+ڕێنمایی و پێکهاتەی گشتی داتابەیس و شێوازی کارکردنی سیستەم
+
+ئامانج:
+ئەم فایلە بۆ هەڵگرتنی تێگەیشتنێکی گشتی لە business logic و بنەمای داتابەیسەکە دروست کراوە، بۆ ئەوەی هەر کارێک لە backend لەسەر بنەمای یەک تێڕوانین بکرێت.
+
+کورتەی business:
+ئەم سیستەمە بۆ بەڕێوەبردنی گەشت و فرۆشتنی بلیت دروست کراوە.
+پشتیوانی دەکات لە:
+- پارەدانی ئۆنلاین و دەروازەکانی وەک FIB, FastPay, ZainCash, QiCard
+- کڕینی بلیت بە کۆمەڵ
+- دەرکردنی بلیت بە QR Code
+- سکانکردنی بلیت لە دەرگا/پاس
+- چاودێری خەرجی و دارایی
+- ئەرشیفکردنی گەشتە کۆنەکان
+- لۆگکردنی کردارەکانی ستاف
+
+--------------------------------------------------
+1. users
+--------------------------------------------------
+ئەرک:
+پاشەکەوتکردنی زانیاری کارمەندان بۆ چوونەژوورەوە و بەڕێوەبردنی سیستەم.
+
+ستونەکان:
+- id: ناسنامەی ناوازە و ئۆتۆماتیکی بەکارهێنەر
+- name: ناوی تەواوی کارمەند
+- email: ئیمەیڵی ناوازە بۆ login
+- password: وشەی نهێنی hashed
+- role: ڕۆڵی کارمەند، وەک admin / scanner / accountant
+- permissions: دەسەڵاتی ورد بە شێوازی JSON
+- status: 1 چالاک، 0 ڕاگیراو
+- deleted_at: soft delete
+- created_at
+- updated_at
+
+--------------------------------------------------
+2. countries
+--------------------------------------------------
+ئەرک:
+تۆمارکردنی وڵاتانی مەبەستی گەشت و پاکێجەکان.
+
+ستونەکان:
+- id
+- user_id: ئەو بەکارهێنەرەی وڵاتەکەی زیاد کردووە
+- name: ناوی وڵات بە فرەزمانی
+- status
+- deleted_at
+- created_at
+- updated_at
+
+--------------------------------------------------
+3. cities
+--------------------------------------------------
+ئەرک:
+پاشەکەوتکردنی شارەکان و بەستنەوەیان بە وڵات.
+
+ستونەکان:
+- id
+- country_id
+- user_id
+- name: ناوی شار بە فرەزمانی
+- status
+- deleted_at
+- created_at
+- updated_at
+
+--------------------------------------------------
+4. events
+--------------------------------------------------
+ئەرک:
+گەشت و پاکێجە سەرەکییەکان لێرە دادەنرێن.
+
+ستونەکان:
+- id
+- user_id
+- country_id
+- title: ناونیشانی گەشت بە فرەزمانی
+- description: وردەکاری گەشت و هۆتێل و زانیارییەکان بە JSON
+- desktop_image
+- mobile_image
+- date
+- upcoming
+- status
+- deleted_at
+- created_at
+- updated_at
+
+تێبینی:
+لە reference ـی ئێستا تەنها ئەو فیلدانە هەڵگیراون کە لە schema ـی `nukhbaglobal_schema.sql` دا هەن.
+
+--------------------------------------------------
+5. sub_events
+--------------------------------------------------
+ئەرک:
+وردەکاری itinerary یان ڕۆژنامەی ناو گەشت.
+
+ستونەکان:
+- id
+- event_id
+- city_id
+- title
+- sub_title
+- description
+- location
+- date
+- start_time
+- end_time
+- deleted_at
+- created_at
+- updated_at
+
+--------------------------------------------------
+6. tickets
+--------------------------------------------------
+ئەرک:
+پێناسەکردنی جۆری بلیت، نرخ، capacity، و بەستنیان بە گەشت یان بەشێکی دیاریکراوی گەشت.
+
+ستونەکان:
+- id
+- event_id
+- sub_event_id: ئەگەر NULL بێت بۆ تەواوی گەشتەکەیە
+- title
+- price
+- capacity
+- reserved_count
+- sold_count
+- max_per_user
+- available_from
+- available_until
+- status
+- note
+- deleted_at
+- created_at
+- updated_at
+
+--------------------------------------------------
+7. expenses
+--------------------------------------------------
+ئەرک:
+چاودێری خەرجییەکانی هەر گەشتێک بۆ حسابات و دەرخستنی قازانج.
+
+ستونەکان:
+- id
+- event_id
+- user_id
+- title
+- category
+- amount
+- receipt_file
+- notes
+- expense_date
+- deleted_at
+- created_at
+- updated_at
+
+--------------------------------------------------
+8. orders
+--------------------------------------------------
+ئەرک:
+پاشەکەوتکردنی داواکارییە گشتییەکان لە ماڵپەڕ.
+
+ستونەکان:
+- id
+- order_number
+- customer_name
+- customer_email
+- customer_phone
+- customer_address
+- tickets_total_amount
+- donation_amount
+- total_amount
+- status
+- expires_at
+- deleted_at
+- created_at
+- updated_at
+
+business logic:
+- order لە کاتی دەستپێکردنی کڕیندا دروست دەبێت
+- ئەگەر لە ماوەی دیاریکراودا پارە نەدرێت، order دەتوانێت expire ببێت
+- total_amount = tickets_total_amount + donation_amount
+
+--------------------------------------------------
+9. order_items
+--------------------------------------------------
+ئەرک:
+pivot table بۆ جیاکردنەوەی جۆر و ژمارەی بلیتە کڕدراوەکان لە ناو یەک order.
+
+ستونەکان:
+- id
+- order_id
+- ticket_id
+- quantity
+- price_per_item
+- created_at
+- updated_at
+
+--------------------------------------------------
+10. payments
+--------------------------------------------------
+ئەرک:
+تۆمارکردنی پڕۆسەی پارەدان، چ cash یان online.
+
+ستونەکان:
+- id
+- order_id
+- type: cash / online
+- invoice_number
+- gateway_name
+- gateway_transaction_id
+- amount
+- status
+- gateway_response
+- webhook_verified
+- paid_at
+- failed_reason
+- refunded_at
+- refund_amount
+- refund_reference
+- deleted_at
+- created_at
+- updated_at
+
+business logic:
+- بۆ پارەدانی online، gateway_name ناوی دەروازەی پارەدانە
+- gateway_response دەبێت payload ـی وەڵامی بانک/دەروازەکە هەڵبگرێت
+- webhook_verified بۆ پشتڕاستکردنەوەی transaction گرنگە
+
+--------------------------------------------------
+11. event_tickets
+--------------------------------------------------
+ئەرک:
+گرنگترین خشتە بۆ بلیتە دەرچووەکان و سکانکردن لە دەرگا.
+
+ستونەکان:
+- id
+- order_id
+- ticket_id
+- payment_id
+- passenger_name
+- ticket_code: UUID یان کۆدی ناوازە بۆ QR Code
+- scanned_at
+- scanned_by
+- status
+- created_at
+- updated_at
+
+business logic:
+- دوای سەرکەوتنی پارەدان، بۆ هەر بلیتێک record ـێک لێرە دروست دەبێت
+- ticket_code دەبێت ناوازە بێت
+- لە سکانکردندا status لە valid بۆ used دەگۆڕدرێت
+- scanned_by ئایدی scanner ـە
+
+--------------------------------------------------
+12. activity_logs
+--------------------------------------------------
+ئەرک:
+black box ـی سیستەم بۆ تۆمارکردنی کردارەکانی ستاف.
+
+ستونەکان:
+- id
+- user_id
+- action
+- table_name
+- record_id
+- old_values
+- new_values
+- ip_address
+- user_agent
+- created_at
+
+business logic:
+- هەر کردارێکی گرنگ وەک create, update, delete, scan, login, refund پێویستە لێرە تۆمار بکرێت
+
+--------------------------------------------------
+13. past_events
+--------------------------------------------------
+ئەرک:
+ئەرشیفکردنی گەشتە کۆنەکان بۆ پیشاندان لە ماڵپەڕ.
+
+ستونەکان:
+- id
+- poster_image
+- title
+- date
+- categories
+- youtube_video_links
+- deleted_at
+- created_at
+- updated_at
+
+--------------------------------------------------
+Business Flow ی گشتی سیستەم
+--------------------------------------------------
+1. admin یان ستاف country و city زیاد دەکات
+2. event سەرەکی دروست دەکرێت
+3. بۆ event ـەکە sub_event/itinerary زیاد دەکرێت
+4. جۆرەکانی ticket بۆ event یان sub_event دادەنرێن
+5. customer order دروست دەکات و ticket ـەکانی هەڵدەبژێرێت
+6. order_items ژمارە و نرخەکانی هەر ticket جیا دەکاتەوە
+7. payment record دروست دەبێت
+8. ئەگەر payment سەرکەوتوو بوو، event_tickets دروست دەبن
+9. لە دەرگا scanner بلیت بە QR Code سکان دەکات
+10. status ـی بلیت دەگۆڕدرێت و activity_logs تۆمار دەکرێت
+11. expenses بۆ هەر event زیاد دەکرێن بۆ حسابات
+12. دوای تەواوبوونی event، دەتوانرێت بۆ past_events ئەرشیف بکرێت
+
+--------------------------------------------------
+جیاوازییەکانی نێوان وەسفە business ـەکە و schema ـی ئێستا
+--------------------------------------------------
+1. gateway list وەک FIB, FastPay, ZainCash, QiCard لە business ـەکە دیارە، بەڵام لە schema ـدا `gateway_name` وەک VARCHAR دانراوە بۆ ئەوەی flexible بێت
+2. ticket_code پێویستە بە شێوازی UUID/QR logic بەرهەمبهێندرێت لە logic ی backend، نەک تەنها لە داتابەیس
+3. state management ی `reserved_count`, `sold_count`, order expiration, webhook verification هەموویان business logic ـن و دەبێت لە backend چارەسەر بکرێن
+
+--------------------------------------------------
+گرنگ بۆ هەنگاوەکانی داهاتوو
+--------------------------------------------------
+- ئەم فایلە reference ـە، نەک migration
+- schema ـی SQL لە فایلێکی جیا هەیە: `nukhbaglobal_schema.sql`
+- پێش دروستکردنی logic، باشە business rules بخرێنە service layer
+- پێویستە دواتر بڕیار بدرێت backend framework چی بێت، بۆ نموونە Laravel یان Node.js
+- ئەگەر بەپێی ئەم وەسفە کار بکەین، پێویستە schema ـی ئێستا لە هەندێک شوێندا نوێ بکرێتەوە
