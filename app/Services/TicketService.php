@@ -192,8 +192,8 @@ final class TicketService
         );
         $updateInventoryStatement = $pdo->prepare(
             'UPDATE tickets
-             SET reserved_count = GREATEST(reserved_count - :quantity, 0),
-                 sold_count = sold_count + :quantity,
+             SET reserved_count = GREATEST(reserved_count - :reserved_quantity, 0),
+                 sold_count = sold_count + :sold_quantity,
                  updated_at = NOW()
              WHERE id = :id'
         );
@@ -211,7 +211,8 @@ final class TicketService
             }
 
             $updateInventoryStatement->execute([
-                ':quantity' => $item['quantity'],
+                ':reserved_quantity' => $item['quantity'],
+                ':sold_quantity' => $item['quantity'],
                 ':id' => $item['ticket_id'],
             ]);
         }
@@ -252,6 +253,118 @@ final class TicketService
         }
 
         return $issuedTickets;
+    }
+
+    /**
+     * @return array<int, array{ticketId:int,ticketCode:string,status:string,passengerName:?string}>
+     */
+    public function getIssuedTicketsByOrder(PDO $pdo, int $orderId): array
+    {
+        $statement = $pdo->prepare(
+            'SELECT
+                ticket_id,
+                ticket_code,
+                status,
+                passenger_name
+             FROM event_tickets
+             WHERE order_id = :order_id
+             ORDER BY id ASC'
+        );
+        $statement->execute([
+            ':order_id' => $orderId,
+        ]);
+
+        /** @var array<int, array<string, mixed>> $rows */
+        $rows = $statement->fetchAll(PDO::FETCH_ASSOC);
+        $issuedTickets = [];
+
+        foreach ($rows as $row) {
+            $issuedTickets[] = [
+                'ticketId' => (int) $row['ticket_id'],
+                'ticketCode' => (string) $row['ticket_code'],
+                'status' => (string) $row['status'],
+                'passengerName' => $row['passenger_name'] !== null ? (string) $row['passenger_name'] : null,
+            ];
+        }
+
+        return $issuedTickets;
+    }
+
+    /**
+     * @return array<int, array{ticketId:int,ticketCode:string,status:string,passengerName:?string}>
+     */
+    public function refundIssuedTicketsForOrder(PDO $pdo, int $orderId): array
+    {
+        $statement = $pdo->prepare(
+            'SELECT
+                id,
+                ticket_id,
+                ticket_code,
+                status,
+                passenger_name
+             FROM event_tickets
+             WHERE order_id = :order_id
+             ORDER BY id ASC
+             FOR UPDATE'
+        );
+        $statement->execute([
+            ':order_id' => $orderId,
+        ]);
+
+        /** @var array<int, array<string, mixed>> $rows */
+        $rows = $statement->fetchAll(PDO::FETCH_ASSOC);
+
+        if ($rows === []) {
+            return [];
+        }
+
+        $inventoryByTicketId = [];
+
+        foreach ($rows as $row) {
+            $status = (string) ($row['status'] ?? '');
+
+            if ($status === 'used') {
+                throw new RuntimeException('Used tickets cannot be refunded.');
+            }
+
+            if ($status === 'refunded') {
+                continue;
+            }
+
+            $ticketId = (int) $row['ticket_id'];
+            $inventoryByTicketId[$ticketId] = ($inventoryByTicketId[$ticketId] ?? 0) + 1;
+        }
+
+        if ($inventoryByTicketId !== []) {
+            $updateTicketsStatement = $pdo->prepare(
+                'UPDATE tickets
+                 SET sold_count = GREATEST(sold_count - :quantity, 0),
+                     updated_at = NOW()
+                 WHERE id = :id'
+            );
+
+            foreach ($inventoryByTicketId as $ticketId => $quantity) {
+                $updateTicketsStatement->execute([
+                    ':quantity' => $quantity,
+                    ':id' => $ticketId,
+                ]);
+            }
+
+            $updateIssuedTicketsStatement = $pdo->prepare(
+                'UPDATE event_tickets
+                 SET status = :status,
+                     updated_at = NOW()
+                 WHERE order_id = :order_id
+                   AND status <> :refunded_status'
+            );
+            $updateIssuedTicketsStatement->execute([
+                ':status' => 'refunded',
+                ':order_id' => $orderId,
+                ':refunded_status' => 'refunded',
+            ]);
+        }
+
+        return $this->getIssuedTicketsByOrder($pdo, $orderId);
     }
 
     /**

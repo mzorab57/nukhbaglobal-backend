@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Controllers;
 
 use App\Core\Database;
+use App\Helpers\Auth;
 use App\Helpers\Response;
 use App\Services\FIBPaymentService;
 use App\Services\TicketService;
@@ -223,6 +224,222 @@ final class PaymentController
                     'orderId' => (int) $tracking['order_id'],
                     'orderNumber' => (string) $tracking['order_number'],
                     'issuedTickets' => $issuedTickets,
+                ],
+                200
+            );
+        } catch (Throwable $throwable) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+
+            $statusCode = $this->resolveHttpStatusCode($throwable->getMessage());
+            Response::jsonResponse(false, $throwable->getMessage(), [], $statusCode);
+        }
+    }
+
+    public function cancelOrder(string $orderId): never
+    {
+        $pdo = Database::getInstance();
+
+        try {
+            if (!ctype_digit($orderId) || (int) $orderId <= 0) {
+                throw new RuntimeException('Order ID is invalid.');
+            }
+
+            $payload = $this->getRequestPayload();
+            $reason = $this->nullableString($payload['reason'] ?? $payload['cancel_reason'] ?? null);
+            $tracking = $this->findOrderPaymentRecord($pdo, (int) $orderId);
+
+            if ($tracking === null) {
+                Response::jsonResponse(false, 'Order was not found.', [], 404);
+            }
+
+            $orderStatus = (string) ($tracking['order_status'] ?? '');
+            $paymentStatus = $tracking['payment_status'] !== null ? (string) $tracking['payment_status'] : null;
+
+            if ($orderStatus === 'cancelled') {
+                Response::jsonResponse(
+                    true,
+                    'Order is already cancelled.',
+                    [
+                        'orderId' => (int) $tracking['order_id'],
+                        'orderNumber' => (string) $tracking['order_number'],
+                        'orderStatus' => $orderStatus,
+                        'paymentStatus' => $paymentStatus,
+                    ],
+                    200
+                );
+            }
+
+            if ($orderStatus === 'refunded' || $paymentStatus === 'refunded') {
+                throw new RuntimeException('Refunded orders cannot be cancelled.');
+            }
+
+            if (
+                in_array($orderStatus, ['paid', 'completed'], true) ||
+                $paymentStatus === 'success'
+            ) {
+                throw new RuntimeException('Paid orders must be refunded instead of cancelled.');
+            }
+
+            if (!in_array($orderStatus, ['pending', 'expired'], true)) {
+                throw new RuntimeException('Only pending or expired orders can be cancelled.');
+            }
+
+            $ticketService = new TicketService();
+            $pdo->beginTransaction();
+
+            $ticketService->releaseReservedTicketsForOrder($pdo, (int) $tracking['order_id']);
+
+            if ((int) ($tracking['payment_record_id'] ?? 0) > 0 && $paymentStatus === 'pending') {
+                $this->updatePaymentFailed(
+                    $pdo,
+                    (int) $tracking['payment_record_id'],
+                    [
+                        'status' => 'CANCELLED',
+                        'raw' => [
+                            'source' => 'admin_cancel',
+                            'reason' => $reason,
+                        ],
+                    ],
+                    $reason ?? 'Cancelled by admin'
+                );
+                $paymentStatus = 'failed';
+            }
+
+            $this->updateOrderStatus($pdo, (int) $tracking['order_id'], 'cancelled');
+            $this->insertActivityLog(
+                $pdo,
+                $this->getAuthenticatedUserId(),
+                'update',
+                'orders',
+                (int) $tracking['order_id'],
+                [
+                    'order_status' => $orderStatus,
+                    'payment_status' => (string) ($tracking['payment_status'] ?? ''),
+                ],
+                [
+                    'order_status' => 'cancelled',
+                    'payment_status' => $paymentStatus,
+                    'reason' => $reason,
+                ]
+            );
+
+            $pdo->commit();
+
+            Response::jsonResponse(
+                true,
+                'Order cancelled successfully.',
+                [
+                    'orderId' => (int) $tracking['order_id'],
+                    'orderNumber' => (string) $tracking['order_number'],
+                    'orderStatus' => 'cancelled',
+                    'paymentStatus' => $paymentStatus,
+                ],
+                200
+            );
+        } catch (Throwable $throwable) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+
+            $statusCode = $this->resolveHttpStatusCode($throwable->getMessage());
+            Response::jsonResponse(false, $throwable->getMessage(), [], $statusCode);
+        }
+    }
+
+    public function refundOrder(string $orderId): never
+    {
+        $pdo = Database::getInstance();
+
+        try {
+            if (!ctype_digit($orderId) || (int) $orderId <= 0) {
+                throw new RuntimeException('Order ID is invalid.');
+            }
+
+            $payload = $this->getRequestPayload();
+            $refundReference = $this->nullableString($payload['refund_reference'] ?? $payload['reference'] ?? null)
+                ?? $this->generateUniqueNumber('REF');
+            $reason = $this->nullableString($payload['reason'] ?? null);
+            $tracking = $this->findOrderPaymentRecord($pdo, (int) $orderId);
+
+            if ($tracking === null) {
+                Response::jsonResponse(false, 'Order was not found.', [], 404);
+            }
+
+            $orderStatus = (string) ($tracking['order_status'] ?? '');
+            $paymentStatus = $tracking['payment_status'] !== null ? (string) $tracking['payment_status'] : null;
+            $paymentRecordId = (int) ($tracking['payment_record_id'] ?? 0);
+            $ticketService = new TicketService();
+
+            if ($orderStatus === 'refunded' && $paymentStatus === 'refunded') {
+                Response::jsonResponse(
+                    true,
+                    'Order is already refunded.',
+                    [
+                        'orderId' => (int) $tracking['order_id'],
+                        'orderNumber' => (string) $tracking['order_number'],
+                        'orderStatus' => $orderStatus,
+                        'paymentStatus' => $paymentStatus,
+                        'refundedTickets' => $ticketService->getIssuedTicketsByOrder($pdo, (int) $tracking['order_id']),
+                    ],
+                    200
+                );
+            }
+
+            if ($paymentRecordId <= 0) {
+                throw new RuntimeException('Refund requires a valid payment record.');
+            }
+
+            if ($orderStatus === 'cancelled' || $paymentStatus === 'failed') {
+                throw new RuntimeException('Cancelled or failed orders cannot be refunded.');
+            }
+
+            if (!in_array($orderStatus, ['paid', 'completed'], true) || $paymentStatus !== 'success') {
+                throw new RuntimeException('Only paid orders can be refunded.');
+            }
+
+            $pdo->beginTransaction();
+
+            $refundedTickets = $ticketService->refundIssuedTicketsForOrder($pdo, (int) $tracking['order_id']);
+            $this->updatePaymentRefunded(
+                $pdo,
+                $paymentRecordId,
+                (float) ($tracking['payment_amount'] ?? 0),
+                $refundReference
+            );
+            $this->updateOrderStatus($pdo, (int) $tracking['order_id'], 'refunded');
+            $this->insertActivityLog(
+                $pdo,
+                $this->getAuthenticatedUserId(),
+                'refund',
+                'orders',
+                (int) $tracking['order_id'],
+                [
+                    'order_status' => $orderStatus,
+                    'payment_status' => $paymentStatus,
+                ],
+                [
+                    'order_status' => 'refunded',
+                    'payment_status' => 'refunded',
+                    'refund_reference' => $refundReference,
+                    'reason' => $reason,
+                ]
+            );
+
+            $pdo->commit();
+
+            Response::jsonResponse(
+                true,
+                'Order refunded successfully.',
+                [
+                    'orderId' => (int) $tracking['order_id'],
+                    'orderNumber' => (string) $tracking['order_number'],
+                    'orderStatus' => 'refunded',
+                    'paymentStatus' => 'refunded',
+                    'refundReference' => $refundReference,
+                    'refundAmount' => round((float) ($tracking['payment_amount'] ?? 0), 2),
+                    'refundedTickets' => $refundedTickets,
                 ],
                 200
             );
@@ -534,6 +751,36 @@ final class PaymentController
         return is_array($result) ? $result : null;
     }
 
+    private function findOrderPaymentRecord(PDO $pdo, int $orderId): ?array
+    {
+        $statement = $pdo->prepare(
+            'SELECT
+                o.id AS order_id,
+                o.order_number,
+                o.status AS order_status,
+                o.total_amount,
+                p.id AS payment_record_id,
+                p.status AS payment_status,
+                p.amount AS payment_amount,
+                p.gateway_transaction_id,
+                p.refunded_at,
+                p.refund_amount,
+                p.refund_reference
+             FROM orders o
+             LEFT JOIN payments p ON p.order_id = o.id AND p.deleted_at IS NULL
+             WHERE o.id = :order_id
+               AND o.deleted_at IS NULL
+             LIMIT 1'
+        );
+        $statement->execute([
+            ':order_id' => $orderId,
+        ]);
+
+        $result = $statement->fetch(PDO::FETCH_ASSOC);
+
+        return is_array($result) ? $result : null;
+    }
+
     private function updatePaymentSuccess(PDO $pdo, int $paymentRecordId, array $fibResult, bool $webhookVerified = false): void
     {
         $statement = $pdo->prepare(
@@ -582,6 +829,31 @@ final class PaymentController
         ]);
     }
 
+    private function updatePaymentRefunded(
+        PDO $pdo,
+        int $paymentRecordId,
+        float $refundAmount,
+        string $refundReference
+    ): void {
+        $statement = $pdo->prepare(
+            'UPDATE payments
+             SET status = :status,
+                 refunded_at = NOW(),
+                 refund_amount = :refund_amount,
+                 refund_reference = :refund_reference,
+                 failed_reason = NULL,
+                 updated_at = NOW()
+             WHERE id = :id'
+        );
+
+        $statement->execute([
+            ':status' => 'refunded',
+            ':refund_amount' => number_format($refundAmount, 2, '.', ''),
+            ':refund_reference' => $refundReference,
+            ':id' => $paymentRecordId,
+        ]);
+    }
+
     private function updateOrderStatus(PDO $pdo, int $orderId, string $status): void
     {
         $statement = $pdo->prepare(
@@ -595,6 +867,64 @@ final class PaymentController
             ':status' => $status,
             ':id' => $orderId,
         ]);
+    }
+
+    /**
+     * @param array<string, mixed> $oldValues
+     * @param array<string, mixed> $newValues
+     */
+    private function insertActivityLog(
+        PDO $pdo,
+        int $userId,
+        string $action,
+        string $tableName,
+        int $recordId,
+        array $oldValues,
+        array $newValues
+    ): void {
+        $statement = $pdo->prepare(
+            'INSERT INTO activity_logs (
+                user_id,
+                action,
+                table_name,
+                record_id,
+                old_values,
+                new_values,
+                ip_address,
+                user_agent
+            ) VALUES (
+                :user_id,
+                :action,
+                :table_name,
+                :record_id,
+                :old_values,
+                :new_values,
+                :ip_address,
+                :user_agent
+            )'
+        );
+        $statement->execute([
+            ':user_id' => $userId,
+            ':action' => $action,
+            ':table_name' => $tableName,
+            ':record_id' => $recordId,
+            ':old_values' => json_encode($oldValues, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            ':new_values' => json_encode($newValues, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            ':ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
+            ':user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null,
+        ]);
+    }
+
+    private function getAuthenticatedUserId(): int
+    {
+        $user = Auth::user();
+        $userId = (int) ($user['id'] ?? 0);
+
+        if ($userId <= 0) {
+            throw new RuntimeException('Unauthorized.');
+        }
+
+        return $userId;
     }
 
     private function generateUniqueNumber(string $prefix): string

@@ -9,135 +9,145 @@ use App\Helpers\Auth;
 use App\Helpers\Response;
 use App\Services\AdminCatalogService;
 use JsonException;
+use PDO;
 use RuntimeException;
 use Throwable;
 
-final class TicketController
+final class CountryController
 {
-    public function show(string $ticketId): never
+    public function index(): never
     {
         try {
-            $id = $this->normalizeId($ticketId, 'Ticket ID is invalid.');
             $pdo = Database::getInstance();
             $service = new AdminCatalogService();
-            $ticket = $service->getTicketDetails($pdo, $id);
+            $countries = $service->getCountries($pdo, $this->getFilters());
 
-            if ($ticket === null) {
-                Response::jsonResponse(false, 'Ticket was not found.', [], 404);
-            }
-
-            Response::jsonResponse(true, 'Ticket loaded successfully.', $ticket, 200);
+            Response::jsonResponse(true, 'Countries loaded successfully.', $countries, 200);
         } catch (Throwable $throwable) {
-            $statusCode = $this->resolveHttpStatusCode($throwable->getMessage());
-            Response::jsonResponse(false, $throwable->getMessage(), [], $statusCode);
+            Response::jsonResponse(false, $throwable->getMessage(), [], $this->resolveHttpStatusCode($throwable->getMessage()));
         }
     }
 
-    public function create(string $eventId): never
+    public function show(string $countryId): never
+    {
+        try {
+            $id = $this->normalizeId($countryId, 'Country ID is invalid.');
+            $pdo = Database::getInstance();
+            $service = new AdminCatalogService();
+            $country = $service->getCountryDetails($pdo, $id);
+
+            if ($country === null) {
+                Response::jsonResponse(false, 'Country was not found.', [], 404);
+            }
+
+            Response::jsonResponse(true, 'Country loaded successfully.', $country, 200);
+        } catch (Throwable $throwable) {
+            Response::jsonResponse(false, $throwable->getMessage(), [], $this->resolveHttpStatusCode($throwable->getMessage()));
+        }
+    }
+
+    public function create(): never
     {
         $pdo = Database::getInstance();
 
         try {
-            $normalizedEventId = $this->normalizeId($eventId, 'Event ID is invalid.');
             $userId = $this->getAuthenticatedUserId();
             $payload = $this->getRequestPayload();
             $service = new AdminCatalogService();
 
             $pdo->beginTransaction();
-            $ticket = $service->createTicket($pdo, $normalizedEventId, $payload);
-            $this->insertActivityLog($pdo, $userId, 'create', 'tickets', (int) ($ticket['id'] ?? 0), [], $ticket);
+            $country = $service->createCountry($pdo, $payload, $userId);
+            $this->insertActivityLog($pdo, $userId, 'create', 'countries', (int) ($country['country']['id'] ?? 0), [], $country['country'] ?? []);
             $pdo->commit();
 
-            Response::jsonResponse(true, 'Ticket created successfully.', $ticket, 201);
+            Response::jsonResponse(true, 'Country created successfully.', $country, 201);
         } catch (Throwable $throwable) {
             if ($pdo->inTransaction()) {
                 $pdo->rollBack();
             }
 
-            $statusCode = $this->resolveHttpStatusCode($throwable->getMessage());
-            Response::jsonResponse(false, $throwable->getMessage(), [], $statusCode);
+            Response::jsonResponse(false, $throwable->getMessage(), [], $this->resolveHttpStatusCode($throwable->getMessage()));
         }
     }
 
-    public function update(string $ticketId): never
+    public function update(string $countryId): never
     {
         $pdo = Database::getInstance();
 
         try {
-            $id = $this->normalizeId($ticketId, 'Ticket ID is invalid.');
+            $id = $this->normalizeId($countryId, 'Country ID is invalid.');
             $userId = $this->getAuthenticatedUserId();
             $payload = $this->getRequestPayload();
             $service = new AdminCatalogService();
-            $before = $service->getTicketDetails($pdo, $id);
+            $before = $service->getCountryDetails($pdo, $id);
 
             if ($before === null) {
-                Response::jsonResponse(false, 'Ticket was not found.', [], 404);
+                Response::jsonResponse(false, 'Country was not found.', [], 404);
             }
 
             $pdo->beginTransaction();
-            $after = $service->updateTicket($pdo, $id, $payload);
+            $after = $service->updateCountry($pdo, $id, $payload);
 
             if ($after === null) {
-                throw new RuntimeException('Ticket was not found.');
+                throw new RuntimeException('Country was not found.');
             }
 
-            $this->insertActivityLog($pdo, $userId, 'update', 'tickets', $id, $before, $after);
+            $this->insertActivityLog($pdo, $userId, 'update', 'countries', $id, $before['country'] ?? [], $after['country'] ?? []);
             $pdo->commit();
 
-            Response::jsonResponse(true, 'Ticket updated successfully.', $after, 200);
+            Response::jsonResponse(true, 'Country updated successfully.', $after, 200);
         } catch (Throwable $throwable) {
             if ($pdo->inTransaction()) {
                 $pdo->rollBack();
             }
 
-            $statusCode = $this->resolveHttpStatusCode($throwable->getMessage());
-            Response::jsonResponse(false, $throwable->getMessage(), [], $statusCode);
+            Response::jsonResponse(false, $throwable->getMessage(), [], $this->resolveHttpStatusCode($throwable->getMessage()));
         }
     }
 
-    public function delete(string $ticketId): never
+    public function delete(string $countryId): never
     {
         $pdo = Database::getInstance();
 
         try {
-            $id = $this->normalizeId($ticketId, 'Ticket ID is invalid.');
+            $id = $this->normalizeId($countryId, 'Country ID is invalid.');
             $userId = $this->getAuthenticatedUserId();
             $service = new AdminCatalogService();
-            $before = $service->getTicketDetails($pdo, $id);
+            $before = $service->getCountryDetails($pdo, $id);
 
             if ($before === null) {
-                Response::jsonResponse(false, 'Ticket was not found.', [], 404);
+                Response::jsonResponse(false, 'Country was not found.', [], 404);
             }
 
             $pdo->beginTransaction();
-            $deleted = $service->deleteTicket($pdo, $id);
+            $deleted = $service->deleteCountry($pdo, $id);
 
             if (!$deleted) {
-                throw new RuntimeException('Ticket was not found.');
+                throw new RuntimeException('Country was not found.');
             }
 
-            $this->insertActivityLog(
-                $pdo,
-                $userId,
-                'delete',
-                'tickets',
-                $id,
-                $before,
-                [
-                    'deleted' => true,
-                ]
-            );
+            $this->insertActivityLog($pdo, $userId, 'delete', 'countries', $id, $before['country'] ?? [], ['deleted' => true]);
             $pdo->commit();
 
-            Response::jsonResponse(true, 'Ticket deleted successfully.', ['id' => $id], 200);
+            Response::jsonResponse(true, 'Country deleted successfully.', ['id' => $id], 200);
         } catch (Throwable $throwable) {
             if ($pdo->inTransaction()) {
                 $pdo->rollBack();
             }
 
-            $statusCode = $this->resolveHttpStatusCode($throwable->getMessage());
-            Response::jsonResponse(false, $throwable->getMessage(), [], $statusCode);
+            Response::jsonResponse(false, $throwable->getMessage(), [], $this->resolveHttpStatusCode($throwable->getMessage()));
         }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function getFilters(): array
+    {
+        return [
+            'status' => $_GET['status'] ?? '',
+            'query' => trim((string) ($_GET['q'] ?? '')),
+        ];
     }
 
     /**
@@ -160,19 +170,33 @@ final class TicketController
         return is_array($decoded) ? $decoded : [];
     }
 
+    private function normalizeId(string $value, string $message): int
+    {
+        if (!ctype_digit($value) || (int) $value <= 0) {
+            throw new RuntimeException($message);
+        }
+
+        return (int) $value;
+    }
+
+    private function getAuthenticatedUserId(): int
+    {
+        $user = Auth::user();
+        $userId = (int) ($user['id'] ?? 0);
+
+        if ($userId <= 0) {
+            throw new RuntimeException('Unauthorized.');
+        }
+
+        return $userId;
+    }
+
     /**
      * @param array<string, mixed> $oldValues
      * @param array<string, mixed> $newValues
      */
-    private function insertActivityLog(
-        \PDO $pdo,
-        int $userId,
-        string $action,
-        string $tableName,
-        int $recordId,
-        array $oldValues,
-        array $newValues
-    ): void {
+    private function insertActivityLog(PDO $pdo, int $userId, string $action, string $tableName, int $recordId, array $oldValues, array $newValues): void
+    {
         $statement = $pdo->prepare(
             'INSERT INTO activity_logs (
                 user_id,
@@ -204,27 +228,6 @@ final class TicketController
             ':ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
             ':user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null,
         ]);
-    }
-
-    private function getAuthenticatedUserId(): int
-    {
-        $user = Auth::user();
-        $userId = (int) ($user['id'] ?? 0);
-
-        if ($userId <= 0) {
-            throw new RuntimeException('Unauthorized.');
-        }
-
-        return $userId;
-    }
-
-    private function normalizeId(string $value, string $message): int
-    {
-        if (!ctype_digit($value) || (int) $value <= 0) {
-            throw new RuntimeException($message);
-        }
-
-        return (int) $value;
     }
 
     private function resolveHttpStatusCode(string $message): int

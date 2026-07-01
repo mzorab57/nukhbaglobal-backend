@@ -47,6 +47,11 @@ return [
         'debug' => filter_var($env('APP_DEBUG', false), FILTER_VALIDATE_BOOL),
         'url' => (string) $env('APP_URL', ''),
     ],
+    'auth' => [
+        'issuer' => (string) $env('AUTH_ISSUER', (string) $env('APP_URL', 'nukhbaglobal-backend')),
+        'secret' => (string) $env('APP_KEY', ''),
+        'token_ttl' => (int) $env('AUTH_TOKEN_TTL', 43200),
+    ],
     'database' => [
         'driver' => 'mysql',
         'host' => (string) $env('DB_HOST', '127.0.0.1'),
