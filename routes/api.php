@@ -10,16 +10,21 @@ use App\Controllers\CountryController;
 use App\Controllers\CustomerOrderController;
 use App\Controllers\DashboardController;
 use App\Controllers\EventController;
+use App\Controllers\MediaController;
 use App\Controllers\OrderController;
+use App\Controllers\OfficeSaleController;
 use App\Controllers\PaymentController;
 use App\Controllers\ScanController;
 use App\Controllers\SubEventController;
 use App\Controllers\TicketController;
+use App\Controllers\UploadController;
+use App\Controllers\UserController;
 use App\Helpers\Response;
 use App\Middleware\AccountantMiddleware;
 use App\Middleware\AdminMiddleware;
 use App\Middleware\AuthMiddleware;
 use App\Middleware\ScannerMiddleware;
+use App\Middleware\UserManagementMiddleware;
 
 $router->get('/api/health', static function (): never {
     Response::jsonResponse(
@@ -85,6 +90,10 @@ $router->get('/api/catalog/countries', static function (): never {
 
 $router->get('/api/catalog/cities', static function (): never {
     (new CatalogController())->cities();
+});
+
+$router->get('/api/catalog/media', static function (): never {
+    (new CatalogController())->media();
 });
 
 $router->get('/api/customer/orders/track', static function (): never {
@@ -244,6 +253,66 @@ $router->post('/api/admin/events/{eventId}/tickets/create', static function (str
     (new TicketController())->create($eventId);
 });
 
+$router->get('/api/admin/media', static function (): never {
+    (new AdminMiddleware())->handle();
+    (new MediaController())->index();
+});
+
+$router->get('/api/admin/media/{itemId}', static function (string $itemId): never {
+    (new AdminMiddleware())->handle();
+    (new MediaController())->show($itemId);
+});
+
+$router->post('/api/admin/media/create', static function (): never {
+    (new AdminMiddleware())->handle();
+    (new MediaController())->create();
+});
+
+$router->post('/api/admin/media/{itemId}/update', static function (string $itemId): never {
+    (new AdminMiddleware())->handle();
+    (new MediaController())->update($itemId);
+});
+
+$router->post('/api/admin/media/{itemId}/delete', static function (string $itemId): never {
+    (new AdminMiddleware())->handle();
+    (new MediaController())->delete($itemId);
+});
+
+$router->post('/api/admin/media/reorder', static function (): never {
+    (new AdminMiddleware())->handle();
+    (new MediaController())->reorder();
+});
+
+$router->post('/api/admin/uploads/image', static function (): never {
+    (new AdminMiddleware())->handle();
+    (new UploadController())->image();
+});
+
+$router->get('/api/admin/users', static function (): never {
+    (new UserManagementMiddleware())->handle();
+    (new UserController())->index();
+});
+
+$router->get('/api/admin/users/{userId}', static function (string $userId): never {
+    (new UserManagementMiddleware())->handle();
+    (new UserController())->show($userId);
+});
+
+$router->post('/api/admin/users/create', static function (): never {
+    (new UserManagementMiddleware())->handle();
+    (new UserController())->create();
+});
+
+$router->post('/api/admin/users/{userId}/update', static function (string $userId): never {
+    (new UserManagementMiddleware())->handle();
+    (new UserController())->update($userId);
+});
+
+$router->post('/api/admin/users/{userId}/delete', static function (string $userId): never {
+    (new UserManagementMiddleware())->handle();
+    (new UserController())->delete($userId);
+});
+
 $router->get('/api/admin/tickets/{ticketId}', static function (string $ticketId): never {
     (new AdminMiddleware())->handle();
     (new TicketController())->show($ticketId);
@@ -269,14 +338,34 @@ $router->get('/api/admin/orders/{orderId}', static function (string $orderId): n
     (new OrderController())->show($orderId);
 });
 
+$router->get('/api/admin/orders/{orderId}/printable-passes', static function (string $orderId): never {
+    (new AccountantMiddleware())->handle();
+    (new OfficeSaleController())->printable($orderId);
+});
+
+$router->post('/api/admin/office-sales/create', static function (): never {
+    (new AccountantMiddleware())->handle();
+    (new OfficeSaleController())->create();
+});
+
 $router->post('/api/admin/orders/{orderId}/cancel', static function (string $orderId): never {
     (new AccountantMiddleware())->handle();
     (new PaymentController())->cancelOrder($orderId);
 });
 
+$router->post('/api/admin/orders/{orderId}/tickets/{eventTicketId}/cancel', static function (string $orderId, string $eventTicketId): never {
+    (new AccountantMiddleware())->handle();
+    (new PaymentController())->cancelIssuedTicket($orderId, $eventTicketId);
+});
+
 $router->post('/api/admin/orders/{orderId}/refund', static function (string $orderId): never {
     (new AccountantMiddleware())->handle();
     (new PaymentController())->refundOrder($orderId);
+});
+
+$router->post('/api/admin/orders/{orderId}/tickets/{eventTicketId}/refund', static function (string $orderId, string $eventTicketId): never {
+    (new AccountantMiddleware())->handle();
+    (new PaymentController())->refundIssuedTicket($orderId, $eventTicketId);
 });
 
 $router->post('/api/payments/fib/checkout', [PaymentController::class, 'checkout']);

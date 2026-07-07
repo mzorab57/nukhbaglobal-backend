@@ -368,6 +368,134 @@ final class TicketService
     }
 
     /**
+     * @return array<string, mixed>
+     */
+    public function updateIssuedTicketStatus(PDO $pdo, int $orderId, int $eventTicketId, string $action): array
+    {
+        if (!in_array($action, ['refund', 'cancel'], true)) {
+            throw new RuntimeException('Ticket action is invalid.');
+        }
+
+        $statement = $pdo->prepare(
+            'SELECT
+                et.id,
+                et.order_id,
+                et.ticket_id,
+                et.ticket_code,
+                et.status,
+                oi.price_per_item,
+                o.status AS order_status,
+                o.tickets_total_amount,
+                o.donation_amount,
+                o.total_amount,
+                p.id AS payment_record_id,
+                p.amount AS payment_amount,
+                p.status AS payment_status,
+                p.refund_amount
+             FROM event_tickets et
+             INNER JOIN orders o ON o.id = et.order_id
+             LEFT JOIN order_items oi ON oi.order_id = et.order_id AND oi.ticket_id = et.ticket_id
+             LEFT JOIN payments p ON p.order_id = et.order_id AND p.deleted_at IS NULL
+             WHERE et.id = :event_ticket_id
+               AND et.order_id = :order_id
+             LIMIT 1
+             FOR UPDATE'
+        );
+        $statement->execute([
+            ':event_ticket_id' => $eventTicketId,
+            ':order_id' => $orderId,
+        ]);
+
+        /** @var array<string, mixed>|false $ticket */
+        $ticket = $statement->fetch(PDO::FETCH_ASSOC);
+
+        if ($ticket === false) {
+            throw new RuntimeException('Issued ticket was not found for this order.');
+        }
+
+        $currentStatus = (string) ($ticket['status'] ?? '');
+        $paymentStatus = $ticket['payment_status'] !== null ? (string) $ticket['payment_status'] : null;
+        $pricePerItem = round((float) ($ticket['price_per_item'] ?? 0), 2);
+
+        if ($currentStatus === 'used') {
+            throw new RuntimeException('Used tickets cannot be changed.');
+        }
+
+        if ($currentStatus === 'refunded') {
+            throw new RuntimeException('This ticket is already refunded.');
+        }
+
+        if ($currentStatus === 'cancelled') {
+            throw new RuntimeException('This ticket is already cancelled.');
+        }
+
+        if ($action === 'refund') {
+            if (!in_array((string) ($ticket['order_status'] ?? ''), ['paid', 'completed'], true) || $paymentStatus !== 'success') {
+                throw new RuntimeException('Only paid tickets can be refunded.');
+            }
+        }
+
+        $newStatus = $action === 'refund' ? 'refunded' : 'cancelled';
+
+        $updateIssuedTicketStatement = $pdo->prepare(
+            'UPDATE event_tickets
+             SET status = :status,
+                 updated_at = NOW()
+             WHERE id = :event_ticket_id
+               AND order_id = :order_id'
+        );
+        $updateIssuedTicketStatement->execute([
+            ':status' => $newStatus,
+            ':event_ticket_id' => $eventTicketId,
+            ':order_id' => $orderId,
+        ]);
+
+        $updateInventoryStatement = $pdo->prepare(
+            'UPDATE tickets
+             SET sold_count = GREATEST(sold_count - 1, 0),
+                 updated_at = NOW()
+             WHERE id = :ticket_id'
+        );
+        $updateInventoryStatement->execute([
+            ':ticket_id' => (int) $ticket['ticket_id'],
+        ]);
+
+        if ($action === 'refund') {
+            $this->applyPartialRefundAdjustments(
+                $pdo,
+                $orderId,
+                $ticket['payment_record_id'] !== null ? (int) $ticket['payment_record_id'] : null,
+                $pricePerItem,
+                round((float) ($ticket['payment_amount'] ?? 0), 2),
+                round((float) ($ticket['refund_amount'] ?? 0), 2)
+            );
+        }
+
+        $summary = $this->recalculateOrderStatusSummary($pdo, $orderId);
+
+        return [
+            'eventTicketId' => $eventTicketId,
+            'ticketCode' => (string) ($ticket['ticket_code'] ?? ''),
+            'oldStatus' => $currentStatus,
+            'newStatus' => $newStatus,
+            'pricePerItem' => $pricePerItem,
+            'orderStatus' => $summary['order_status'],
+            'paymentStatus' => $summary['payment_status'],
+            'ticketsTotalAmount' => $summary['tickets_total_amount'],
+            'totalAmount' => $summary['total_amount'],
+            'refundAmount' => $summary['refund_amount'],
+        ];
+    }
+
+    /**
+     * @return array{order_status:string,payment_status:?string,tickets_total_amount:float,total_amount:float,refund_amount:float}
+     */
+    public function syncOrderStatusSummary(PDO $pdo, int $orderId): array
+    {
+        return $this->recalculateOrderStatusSummary($pdo, $orderId);
+    }
+
+    /**
      * @param array<int, array{ticket_id:int,quantity:int}> $items
      * @return array<int, int>
      */
@@ -412,6 +540,124 @@ final class TicketService
         }
 
         return $items;
+    }
+
+    private function applyPartialRefundAdjustments(
+        PDO $pdo,
+        int $orderId,
+        ?int $paymentRecordId,
+        float $refundAmount,
+        float $paymentAmount,
+        float $existingRefundAmount
+    ): void {
+        $orderUpdateStatement = $pdo->prepare(
+            'UPDATE orders
+             SET tickets_total_amount = GREATEST(tickets_total_amount - :tickets_refund_amount, 0),
+                 total_amount = GREATEST(total_amount - :total_refund_amount, donation_amount),
+                 updated_at = NOW()
+             WHERE id = :order_id'
+        );
+        $orderUpdateStatement->execute([
+            ':tickets_refund_amount' => number_format($refundAmount, 2, '.', ''),
+            ':total_refund_amount' => number_format($refundAmount, 2, '.', ''),
+            ':order_id' => $orderId,
+        ]);
+
+        if ($paymentRecordId === null || $paymentRecordId <= 0) {
+            return;
+        }
+
+        $nextRefundAmount = round($existingRefundAmount + $refundAmount, 2);
+        $nextStatus = $nextRefundAmount + 0.00001 >= $paymentAmount ? 'refunded' : 'success';
+
+        $paymentUpdateStatement = $pdo->prepare(
+            'UPDATE payments
+             SET status = :status,
+                 refund_amount = :refund_amount,
+                 refunded_at = NOW(),
+                 updated_at = NOW()
+             WHERE id = :payment_record_id'
+        );
+        $paymentUpdateStatement->execute([
+            ':status' => $nextStatus,
+            ':refund_amount' => number_format($nextRefundAmount, 2, '.', ''),
+            ':payment_record_id' => $paymentRecordId,
+        ]);
+    }
+
+    /**
+     * @return array{order_status:string,payment_status:?string,tickets_total_amount:float,total_amount:float,refund_amount:float}
+     */
+    private function recalculateOrderStatusSummary(PDO $pdo, int $orderId): array
+    {
+        $summaryStatement = $pdo->prepare(
+            'SELECT
+                o.status AS current_order_status,
+                o.tickets_total_amount,
+                o.total_amount,
+                p.status AS payment_status,
+                COALESCE(p.refund_amount, 0) AS refund_amount,
+                SUM(CASE WHEN et.status = "valid" THEN 1 ELSE 0 END) AS valid_count,
+                SUM(CASE WHEN et.status = "used" THEN 1 ELSE 0 END) AS used_count,
+                SUM(CASE WHEN et.status = "cancelled" THEN 1 ELSE 0 END) AS cancelled_count,
+                SUM(CASE WHEN et.status = "refunded" THEN 1 ELSE 0 END) AS refunded_count
+             FROM orders o
+             LEFT JOIN payments p ON p.order_id = o.id AND p.deleted_at IS NULL
+             LEFT JOIN event_tickets et ON et.order_id = o.id
+             WHERE o.id = :order_id
+             GROUP BY o.id, o.status, o.tickets_total_amount, o.total_amount, p.status, p.refund_amount
+             LIMIT 1'
+        );
+        $summaryStatement->execute([
+            ':order_id' => $orderId,
+        ]);
+
+        /** @var array<string, mixed>|false $summary */
+        $summary = $summaryStatement->fetch(PDO::FETCH_ASSOC);
+
+        if ($summary === false) {
+            throw new RuntimeException('Order summary could not be recalculated.');
+        }
+
+        $validCount = (int) ($summary['valid_count'] ?? 0);
+        $usedCount = (int) ($summary['used_count'] ?? 0);
+        $cancelledCount = (int) ($summary['cancelled_count'] ?? 0);
+        $refundedCount = (int) ($summary['refunded_count'] ?? 0);
+        $currentOrderStatus = (string) ($summary['current_order_status'] ?? 'completed');
+
+        if ($validCount > 0) {
+            $orderStatus = in_array($currentOrderStatus, ['paid', 'completed'], true)
+                ? $currentOrderStatus
+                : 'completed';
+        } elseif ($usedCount > 0) {
+            $orderStatus = 'completed';
+        } else {
+            $orderStatus = 'completed';
+            if ($refundedCount > 0 && $cancelledCount === 0) {
+                $orderStatus = 'refunded';
+            } elseif ($cancelledCount > 0) {
+                $orderStatus = 'cancelled';
+            }
+        }
+
+        $updateOrderStatusStatement = $pdo->prepare(
+            'UPDATE orders
+             SET status = :status,
+                 updated_at = NOW()
+             WHERE id = :order_id'
+        );
+        $updateOrderStatusStatement->execute([
+            ':status' => $orderStatus,
+            ':order_id' => $orderId,
+        ]);
+
+        return [
+            'order_status' => $orderStatus,
+            'payment_status' => $summary['payment_status'] !== null ? (string) $summary['payment_status'] : null,
+            'tickets_total_amount' => round((float) ($summary['tickets_total_amount'] ?? 0), 2),
+            'total_amount' => round((float) ($summary['total_amount'] ?? 0), 2),
+            'refund_amount' => round((float) ($summary['refund_amount'] ?? 0), 2),
+        ];
     }
 
     private function toTimestamp(mixed $value): ?int

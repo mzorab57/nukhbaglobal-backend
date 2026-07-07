@@ -6,6 +6,7 @@ namespace App\Controllers;
 
 use App\Core\Database;
 use App\Helpers\Response;
+use App\Services\MediaItemService;
 use App\Services\PublicCatalogService;
 use RuntimeException;
 use Throwable;
@@ -135,6 +136,18 @@ final class CatalogController
         }
     }
 
+    public function media(): never
+    {
+        try {
+            $pdo = Database::getInstance();
+            $service = new MediaItemService();
+
+            Response::jsonResponse(true, 'Public media feed loaded successfully.', $service->getPublicFeed($pdo, $this->getMediaFilters()), 200);
+        } catch (Throwable $throwable) {
+            Response::jsonResponse(false, $throwable->getMessage(), [], $this->resolveHttpStatusCode($throwable->getMessage()));
+        }
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -159,6 +172,17 @@ final class CatalogController
     {
         return [
             'country_id' => $_GET['country_id'] ?? '',
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function getMediaFilters(): array
+    {
+        return [
+            'category' => $_GET['category'] ?? '',
+            'categories' => $_GET['categories'] ?? '',
         ];
     }
 

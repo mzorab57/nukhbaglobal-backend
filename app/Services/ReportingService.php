@@ -302,12 +302,18 @@ final class ReportingService
                 oi.quantity,
                 oi.price_per_item,
                 t.title AS ticket_title,
+                se.id AS sub_event_id,
+                se.title AS sub_event_title,
+                ci.id AS city_id,
+                ci.name AS city_name,
                 e.id AS event_id,
                 e.title AS event_title,
                 e.date AS event_date
              FROM order_items oi
              INNER JOIN tickets t ON t.id = oi.ticket_id
              INNER JOIN events e ON e.id = t.event_id
+             LEFT JOIN sub_events se ON se.id = t.sub_event_id AND se.deleted_at IS NULL
+             LEFT JOIN cities ci ON ci.id = se.city_id
              WHERE oi.order_id = :order_id
              ORDER BY oi.id ASC'
         );
@@ -325,9 +331,18 @@ final class ReportingService
                 et.status,
                 et.scanned_at,
                 et.created_at,
+                oi.price_per_item,
+                se.id AS sub_event_id,
+                se.title AS sub_event_title,
+                ci.id AS city_id,
+                ci.name AS city_name,
                 scanner.id AS scanned_by_id,
                 scanner.name AS scanned_by_name
              FROM event_tickets et
+             LEFT JOIN order_items oi ON oi.order_id = et.order_id AND oi.ticket_id = et.ticket_id
+             LEFT JOIN tickets t ON t.id = et.ticket_id
+             LEFT JOIN sub_events se ON se.id = t.sub_event_id AND se.deleted_at IS NULL
+             LEFT JOIN cities ci ON ci.id = se.city_id
              LEFT JOIN users scanner ON scanner.id = et.scanned_by
              WHERE et.order_id = :order_id
              ORDER BY et.id ASC'
@@ -611,6 +626,7 @@ final class ReportingService
     {
         $ticketTitle = $this->decodeJsonColumn($row['ticket_title'] ?? null);
         $eventTitle = $this->decodeJsonColumn($row['event_title'] ?? null);
+        $subEventTitle = $this->decodeJsonColumn($row['sub_event_title'] ?? null);
 
         return [
             'id' => (int) $row['id'],
@@ -620,6 +636,15 @@ final class ReportingService
             'lineAmount' => round((float) $row['price_per_item'] * (int) $row['quantity'], 2),
             'ticketTitle' => $ticketTitle,
             'ticketTitleText' => $this->resolveDisplayText($ticketTitle),
+            'subEvent' => [
+                'id' => $row['sub_event_id'] !== null ? (int) $row['sub_event_id'] : null,
+                'title' => $subEventTitle,
+                'titleText' => $this->resolveDisplayText($subEventTitle),
+            ],
+            'city' => [
+                'id' => $row['city_id'] !== null ? (int) $row['city_id'] : null,
+                'name' => $row['city_name'] !== null ? (string) $row['city_name'] : null,
+            ],
             'event' => [
                 'id' => (int) $row['event_id'],
                 'title' => $eventTitle,
@@ -635,12 +660,26 @@ final class ReportingService
      */
     private function mapIssuedTicketRow(array $row): array
     {
+        $subEventTitle = $this->decodeJsonColumn($row['sub_event_title'] ?? null);
+
         return [
             'id' => (int) $row['id'],
             'ticketId' => (int) $row['ticket_id'],
             'ticketCode' => (string) $row['ticket_code'],
             'passengerName' => $row['passenger_name'] !== null ? (string) $row['passenger_name'] : null,
             'status' => (string) $row['status'],
+            'pricePerItem' => round((float) ($row['price_per_item'] ?? 0), 2),
+            'canRefund' => (string) $row['status'] === 'valid',
+            'canCancel' => (string) $row['status'] === 'valid',
+            'subEvent' => [
+                'id' => $row['sub_event_id'] !== null ? (int) $row['sub_event_id'] : null,
+                'title' => $subEventTitle,
+                'titleText' => $this->resolveDisplayText($subEventTitle),
+            ],
+            'city' => [
+                'id' => $row['city_id'] !== null ? (int) $row['city_id'] : null,
+                'name' => $row['city_name'] !== null ? (string) $row['city_name'] : null,
+            ],
             'scannedAt' => $row['scanned_at'] !== null ? (string) $row['scanned_at'] : null,
             'createdAt' => (string) $row['created_at'],
             'scannedBy' => $row['scanned_by_id'] !== null

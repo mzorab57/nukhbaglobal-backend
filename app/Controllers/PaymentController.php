@@ -453,6 +453,16 @@ final class PaymentController
         }
     }
 
+    public function refundIssuedTicket(string $orderId, string $eventTicketId): never
+    {
+        $this->handleIssuedTicketAction($orderId, $eventTicketId, 'refund');
+    }
+
+    public function cancelIssuedTicket(string $orderId, string $eventTicketId): never
+    {
+        $this->handleIssuedTicketAction($orderId, $eventTicketId, 'cancel');
+    }
+
     private function getRequestPayload(): array
     {
         $contentLength = (int) ($_SERVER['CONTENT_LENGTH'] ?? 0);
@@ -474,6 +484,106 @@ final class PaymentController
         }
 
         return is_array($decoded) ? $decoded : [];
+    }
+
+    private function handleIssuedTicketAction(string $orderId, string $eventTicketId, string $action): never
+    {
+        $pdo = Database::getInstance();
+
+        try {
+            if (!ctype_digit($orderId) || (int) $orderId <= 0) {
+                throw new RuntimeException('Order ID is invalid.');
+            }
+
+            if (!ctype_digit($eventTicketId) || (int) $eventTicketId <= 0) {
+                throw new RuntimeException('Issued ticket ID is invalid.');
+            }
+
+            $payload = $this->getRequestPayload();
+            $reason = $this->nullableString($payload['reason'] ?? null);
+            $ticketService = new TicketService();
+            $tracking = $this->findOrderPaymentRecord($pdo, (int) $orderId);
+
+            if ($tracking === null) {
+                Response::jsonResponse(false, 'Order was not found.', [], 404);
+            }
+
+            $pdo->beginTransaction();
+            $result = $ticketService->updateIssuedTicketStatus(
+                $pdo,
+                (int) $orderId,
+                (int) $eventTicketId,
+                $action
+            );
+
+            $this->insertActivityLog(
+                $pdo,
+                $this->getAuthenticatedUserId(),
+                $action === 'refund' ? 'refund' : 'update',
+                'event_tickets',
+                (int) $eventTicketId,
+                [
+                    'status' => $result['oldStatus'],
+                    'order_id' => (int) $orderId,
+                    'ticket_code' => $result['ticketCode'],
+                ],
+                [
+                    'status' => $result['newStatus'],
+                    'order_id' => (int) $orderId,
+                    'ticket_code' => $result['ticketCode'],
+                    'reason' => $reason,
+                ]
+            );
+
+            $this->insertActivityLog(
+                $pdo,
+                $this->getAuthenticatedUserId(),
+                'update',
+                'orders',
+                (int) $orderId,
+                [
+                    'order_status' => (string) ($tracking['order_status'] ?? ''),
+                    'payment_status' => (string) ($tracking['payment_status'] ?? ''),
+                    'total_amount' => round((float) ($tracking['total_amount'] ?? 0), 2),
+                ],
+                [
+                    'order_status' => $result['orderStatus'],
+                    'payment_status' => $result['paymentStatus'],
+                    'total_amount' => $result['totalAmount'],
+                    'tickets_total_amount' => $result['ticketsTotalAmount'],
+                    'refund_amount' => $result['refundAmount'],
+                    'reason' => $reason,
+                    'scope' => 'single_ticket_' . $action,
+                ]
+            );
+
+            $pdo->commit();
+
+            Response::jsonResponse(
+                true,
+                sprintf('Ticket %s processed successfully.', $action === 'refund' ? 'refund' : 'cancellation'),
+                [
+                    'orderId' => (int) $orderId,
+                    'orderNumber' => (string) ($tracking['order_number'] ?? ''),
+                    'eventTicketId' => (int) $eventTicketId,
+                    'ticketCode' => $result['ticketCode'],
+                    'status' => $result['newStatus'],
+                    'orderStatus' => $result['orderStatus'],
+                    'paymentStatus' => $result['paymentStatus'],
+                    'totalAmount' => $result['totalAmount'],
+                    'ticketsTotalAmount' => $result['ticketsTotalAmount'],
+                    'refundAmount' => $result['refundAmount'],
+                ],
+                200
+            );
+        } catch (Throwable $throwable) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+
+            $statusCode = $this->resolveHttpStatusCode($throwable->getMessage());
+            Response::jsonResponse(false, $throwable->getMessage(), [], $statusCode);
+        }
     }
 
     private function validateCheckoutPayload(array $payload): array

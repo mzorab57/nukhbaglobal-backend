@@ -15,6 +15,7 @@ DROP TABLE IF EXISTS `orders`;
 DROP TABLE IF EXISTS `expenses`;
 DROP TABLE IF EXISTS `tickets`;
 DROP TABLE IF EXISTS `sub_events`;
+DROP TABLE IF EXISTS `media_items`;
 DROP TABLE IF EXISTS `events`;
 DROP TABLE IF EXISTS `cities`;
 DROP TABLE IF EXISTS `countries`;
@@ -97,7 +98,30 @@ CREATE TABLE `events` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =========================================================================
--- 5. SUB EVENTS TABLE
+-- 5. MEDIA ITEMS TABLE
+-- =========================================================================
+CREATE TABLE `media_items` (
+  `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  `user_id` INT UNSIGNED NOT NULL,
+  `category` VARCHAR(100) NOT NULL,
+  `title` JSON DEFAULT NULL,
+  `desktop_image` VARCHAR(255) NOT NULL,
+  `mobile_image` VARCHAR(255) NOT NULL,
+  `cta_label` JSON DEFAULT NULL,
+  `cta_url` VARCHAR(500) DEFAULT NULL,
+  `sort_order` INT UNSIGNED NOT NULL DEFAULT 1,
+  `status` TINYINT(1) NOT NULL DEFAULT 1,
+  `deleted_at` TIMESTAMP NULL DEFAULT NULL,
+  `created_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT `fk_media_items_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  INDEX `idx_media_items_category` (`category`),
+  INDEX `idx_media_items_status` (`status`),
+  INDEX `idx_media_items_sort_order` (`sort_order`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =========================================================================
+-- 6. SUB EVENTS TABLE
 -- =========================================================================
 CREATE TABLE `sub_events` (
   `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -119,7 +143,7 @@ CREATE TABLE `sub_events` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =========================================================================
--- 6. TICKETS TABLE
+-- 7. TICKETS TABLE
 -- =========================================================================
 CREATE TABLE `tickets` (
   `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -146,7 +170,7 @@ CREATE TABLE `tickets` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =========================================================================
--- 7. EXPENSES TABLE
+-- 8. EXPENSES TABLE
 -- =========================================================================
 CREATE TABLE `expenses` (
   `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -169,7 +193,7 @@ CREATE TABLE `expenses` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =========================================================================
--- 8. ORDERS TABLE
+-- 9. ORDERS TABLE
 -- =========================================================================
 CREATE TABLE `orders` (
   `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -193,7 +217,7 @@ CREATE TABLE `orders` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =========================================================================
--- 9. ORDER ITEMS TABLE
+-- 10. ORDER ITEMS TABLE
 -- =========================================================================
 CREATE TABLE `order_items` (
   `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -210,7 +234,7 @@ CREATE TABLE `order_items` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =========================================================================
--- 10. PAYMENTS TABLE
+-- 11. PAYMENTS TABLE
 -- =========================================================================
 CREATE TABLE `payments` (
   `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -239,7 +263,7 @@ CREATE TABLE `payments` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =========================================================================
--- 11. EVENT TICKETS TABLE
+-- 12. EVENT TICKETS TABLE
 -- =========================================================================
 CREATE TABLE `event_tickets` (
   `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,

@@ -31,6 +31,7 @@ final class ScanService
     {
         $scanner = $this->findScannerUser($pdo, $scannerUserId);
         $ticket = $this->findTicketByCode($pdo, $ticketCode, true);
+        $ticketService = new TicketService();
 
         if ($ticket === null) {
             throw new RuntimeException('Ticket was not found.');
@@ -57,6 +58,7 @@ final class ScanService
                 ':id' => $ticket['id'],
             ]);
 
+            $ticketService->syncOrderStatusSummary($pdo, (int) $ticket['order_id']);
             $this->insertActivityLog($pdo, $scannerUserId, (int) $ticket['id'], $ticket);
 
             $updatedTicket = $this->findTicketByCode($pdo, $ticketCode, true);
