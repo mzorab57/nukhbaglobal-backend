@@ -51,6 +51,14 @@ final class ReportingService
              FROM event_tickets'
         )->fetch(PDO::FETCH_ASSOC) ?: [];
 
+        $expensesSummary = $pdo->query(
+            'SELECT
+                COUNT(*) AS total_expenses,
+                COALESCE(SUM(amount), 0) AS total_expense_amount
+             FROM expenses
+             WHERE deleted_at IS NULL'
+        )->fetch(PDO::FETCH_ASSOC) ?: [];
+
         $recentOrdersStatement = $pdo->query(
             'SELECT
                 o.id,
@@ -69,6 +77,9 @@ final class ReportingService
         );
         $recentOrders = $recentOrdersStatement->fetchAll(PDO::FETCH_ASSOC);
 
+        $netRevenue = round((float) ($paymentsSummary['successful_payment_amount'] ?? 0), 2);
+        $totalExpenses = round((float) ($expensesSummary['total_expense_amount'] ?? 0), 2);
+
         return [
             'orders' => [
                 'total' => (int) ($ordersSummary['total_orders'] ?? 0),
@@ -84,8 +95,17 @@ final class ReportingService
                 'success' => (int) ($paymentsSummary['successful_payments'] ?? 0),
                 'failed' => (int) ($paymentsSummary['failed_payments'] ?? 0),
                 'refunded' => (int) ($paymentsSummary['refunded_payments'] ?? 0),
-                'successfulAmount' => round((float) ($paymentsSummary['successful_payment_amount'] ?? 0), 2),
+                'successfulAmount' => $netRevenue,
                 'pendingAmount' => round((float) ($paymentsSummary['pending_payment_amount'] ?? 0), 2),
+            ],
+            'expenses' => [
+                'total' => (int) ($expensesSummary['total_expenses'] ?? 0),
+                'totalAmount' => $totalExpenses,
+            ],
+            'finance' => [
+                'netRevenue' => $netRevenue,
+                'expenseAmount' => $totalExpenses,
+                'netAfterExpenses' => round($netRevenue - $totalExpenses, 2),
             ],
             'tickets' => [
                 'issued' => (int) ($ticketsSummary['total_issued_tickets'] ?? 0),
