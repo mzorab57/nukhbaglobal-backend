@@ -7,40 +7,62 @@ namespace App\Controllers;
 use App\Core\Database;
 use App\Helpers\Auth;
 use App\Helpers\Response;
-use App\Services\ExpenseService;
+use App\Services\VolunteerApplicationService;
 use JsonException;
 use PDO;
 use RuntimeException;
 use Throwable;
 
-final class ExpenseController
+final class VolunteerApplicationController
 {
     public function index(): never
     {
         try {
             $pdo = Database::getInstance();
-            $service = new ExpenseService();
+            $service = new VolunteerApplicationService();
 
-            Response::jsonResponse(true, 'Expenses loaded successfully.', $service->getExpenses($pdo, $this->getFilters()), 200);
+            Response::jsonResponse(true, 'Volunteer applications loaded successfully.', $service->getApplications($pdo, $this->getFilters()), 200);
         } catch (Throwable $throwable) {
             Response::jsonResponse(false, $throwable->getMessage(), [], $this->resolveHttpStatusCode($throwable->getMessage()));
         }
     }
 
-    public function show(string $expenseId): never
+    public function show(string $applicationId): never
     {
         try {
-            $id = $this->normalizeId($expenseId, 'Expense ID is invalid.');
+            $id = $this->normalizeId($applicationId, 'Application ID is invalid.');
             $pdo = Database::getInstance();
-            $service = new ExpenseService();
-            $expense = $service->getExpenseDetails($pdo, $id);
+            $service = new VolunteerApplicationService();
+            $application = $service->getApplicationDetails($pdo, $id);
 
-            if ($expense === null) {
-                Response::jsonResponse(false, 'Expense was not found.', [], 404);
+            if ($application === null) {
+                Response::jsonResponse(false, 'Application was not found.', [], 404);
             }
 
-            Response::jsonResponse(true, 'Expense loaded successfully.', $expense, 200);
+            Response::jsonResponse(true, 'Volunteer application loaded successfully.', $application, 200);
         } catch (Throwable $throwable) {
+            Response::jsonResponse(false, $throwable->getMessage(), [], $this->resolveHttpStatusCode($throwable->getMessage()));
+        }
+    }
+
+    public function submit(): never
+    {
+        $pdo = Database::getInstance();
+
+        try {
+            $payload = $this->getRequestPayload();
+            $service = new VolunteerApplicationService();
+
+            $pdo->beginTransaction();
+            $application = $service->createApplication($pdo, $payload, 'website');
+            $pdo->commit();
+
+            Response::jsonResponse(true, 'Your volunteer application has been sent successfully.', $application, 201);
+        } catch (Throwable $throwable) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+
             Response::jsonResponse(false, $throwable->getMessage(), [], $this->resolveHttpStatusCode($throwable->getMessage()));
         }
     }
@@ -50,16 +72,16 @@ final class ExpenseController
         $pdo = Database::getInstance();
 
         try {
-            $userId = $this->getAuthenticatedUserId();
+            $actingUserId = $this->getAuthenticatedUserId();
             $payload = $this->getRequestPayload();
-            $service = new ExpenseService();
+            $service = new VolunteerApplicationService();
 
             $pdo->beginTransaction();
-            $expense = $service->createExpense($pdo, $payload, $userId);
-            $this->insertActivityLog($pdo, $userId, 'create', 'expenses', (int) ($expense['expense']['id'] ?? 0), [], $expense['expense'] ?? []);
+            $application = $service->createApplication($pdo, $payload, 'admin', $actingUserId);
+            $this->insertActivityLog($pdo, $actingUserId, 'create', 'volunteer_applications', (int) ($application['application']['id'] ?? 0), [], $application['application'] ?? []);
             $pdo->commit();
 
-            Response::jsonResponse(true, 'Expense created successfully.', $expense, 201);
+            Response::jsonResponse(true, 'Volunteer application created successfully.', $application, 201);
         } catch (Throwable $throwable) {
             if ($pdo->inTransaction()) {
                 $pdo->rollBack();
@@ -69,32 +91,32 @@ final class ExpenseController
         }
     }
 
-    public function update(string $expenseId): never
+    public function update(string $applicationId): never
     {
         $pdo = Database::getInstance();
 
         try {
-            $id = $this->normalizeId($expenseId, 'Expense ID is invalid.');
-            $userId = $this->getAuthenticatedUserId();
+            $id = $this->normalizeId($applicationId, 'Application ID is invalid.');
+            $actingUserId = $this->getAuthenticatedUserId();
             $payload = $this->getRequestPayload();
-            $service = new ExpenseService();
-            $before = $service->getExpenseDetails($pdo, $id);
+            $service = new VolunteerApplicationService();
+            $before = $service->getApplicationDetails($pdo, $id);
 
             if ($before === null) {
-                Response::jsonResponse(false, 'Expense was not found.', [], 404);
+                Response::jsonResponse(false, 'Application was not found.', [], 404);
             }
 
             $pdo->beginTransaction();
-            $after = $service->updateExpense($pdo, $id, $payload);
+            $after = $service->updateApplication($pdo, $id, $payload);
 
             if ($after === null) {
-                throw new RuntimeException('Expense was not found.');
+                throw new RuntimeException('Application was not found.');
             }
 
-            $this->insertActivityLog($pdo, $userId, 'update', 'expenses', $id, $before['expense'] ?? [], $after['expense'] ?? []);
+            $this->insertActivityLog($pdo, $actingUserId, 'update', 'volunteer_applications', $id, $before['application'] ?? [], $after['application'] ?? []);
             $pdo->commit();
 
-            Response::jsonResponse(true, 'Expense updated successfully.', $after, 200);
+            Response::jsonResponse(true, 'Volunteer application updated successfully.', $after, 200);
         } catch (Throwable $throwable) {
             if ($pdo->inTransaction()) {
                 $pdo->rollBack();
@@ -104,31 +126,31 @@ final class ExpenseController
         }
     }
 
-    public function delete(string $expenseId): never
+    public function delete(string $applicationId): never
     {
         $pdo = Database::getInstance();
 
         try {
-            $id = $this->normalizeId($expenseId, 'Expense ID is invalid.');
-            $userId = $this->getAuthenticatedUserId();
-            $service = new ExpenseService();
-            $before = $service->getExpenseDetails($pdo, $id);
+            $id = $this->normalizeId($applicationId, 'Application ID is invalid.');
+            $actingUserId = $this->getAuthenticatedUserId();
+            $service = new VolunteerApplicationService();
+            $before = $service->getApplicationDetails($pdo, $id);
 
             if ($before === null) {
-                Response::jsonResponse(false, 'Expense was not found.', [], 404);
+                Response::jsonResponse(false, 'Application was not found.', [], 404);
             }
 
             $pdo->beginTransaction();
-            $deleted = $service->deleteExpense($pdo, $id);
+            $deleted = $service->deleteApplication($pdo, $id);
 
             if (!$deleted) {
-                throw new RuntimeException('Expense was not found.');
+                throw new RuntimeException('Application was not found.');
             }
 
-            $this->insertActivityLog($pdo, $userId, 'delete', 'expenses', $id, $before['expense'] ?? [], ['deleted' => true]);
+            $this->insertActivityLog($pdo, $actingUserId, 'delete', 'volunteer_applications', $id, $before['application'] ?? [], ['deleted' => true]);
             $pdo->commit();
 
-            Response::jsonResponse(true, 'Expense deleted successfully.', ['id' => $id], 200);
+            Response::jsonResponse(true, 'Volunteer application deleted successfully.', ['id' => $id], 200);
         } catch (Throwable $throwable) {
             if ($pdo->inTransaction()) {
                 $pdo->rollBack();
@@ -144,11 +166,9 @@ final class ExpenseController
     private function getFilters(): array
     {
         return [
-            'event_id' => $_GET['event_id'] ?? '',
-            'category' => $_GET['category'] ?? '',
+            'status' => $_GET['status'] ?? '',
+            'source' => $_GET['source'] ?? '',
             'query' => trim((string) ($_GET['q'] ?? '')),
-            'date_from' => $_GET['date_from'] ?? '',
-            'date_to' => $_GET['date_to'] ?? '',
         ];
     }
 
@@ -244,7 +264,7 @@ final class ExpenseController
             str_contains($normalized, 'required') ||
             str_contains($normalized, 'invalid') ||
             str_contains($normalized, 'malformed') ||
-            str_contains($normalized, 'too long')
+            str_contains($normalized, 'must be accepted')
         ) {
             return 422;
         }

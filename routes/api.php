@@ -10,15 +10,18 @@ use App\Controllers\CountryController;
 use App\Controllers\CustomerOrderController;
 use App\Controllers\DashboardController;
 use App\Controllers\EventController;
+use App\Controllers\ExpenseController;
 use App\Controllers\MediaController;
 use App\Controllers\OrderController;
 use App\Controllers\OfficeSaleController;
 use App\Controllers\PaymentController;
 use App\Controllers\ScanController;
+use App\Controllers\StallApplicationController;
 use App\Controllers\SubEventController;
 use App\Controllers\TicketController;
 use App\Controllers\UploadController;
 use App\Controllers\UserController;
+use App\Controllers\VolunteerApplicationController;
 use App\Helpers\Response;
 use App\Middleware\AccountantMiddleware;
 use App\Middleware\AdminMiddleware;
@@ -94,6 +97,14 @@ $router->get('/api/catalog/cities', static function (): never {
 
 $router->get('/api/catalog/media', static function (): never {
     (new CatalogController())->media();
+});
+
+$router->post('/api/stalls/applications', static function (): never {
+    (new StallApplicationController())->submit();
+});
+
+$router->post('/api/volunteers/applications', static function (): never {
+    (new VolunteerApplicationController())->submit();
 });
 
 $router->get('/api/customer/orders/track', static function (): never {
@@ -203,6 +214,31 @@ $router->get('/api/admin/events/{eventId}', static function (string $eventId): n
     (new EventController())->show($eventId);
 });
 
+$router->get('/api/admin/expenses', static function (): never {
+    (new AccountantMiddleware())->handle();
+    (new ExpenseController())->index();
+});
+
+$router->get('/api/admin/expenses/{expenseId}', static function (string $expenseId): never {
+    (new AccountantMiddleware())->handle();
+    (new ExpenseController())->show($expenseId);
+});
+
+$router->post('/api/admin/expenses/create', static function (): never {
+    (new AccountantMiddleware())->handle();
+    (new ExpenseController())->create();
+});
+
+$router->post('/api/admin/expenses/{expenseId}/update', static function (string $expenseId): never {
+    (new AccountantMiddleware())->handle();
+    (new ExpenseController())->update($expenseId);
+});
+
+$router->post('/api/admin/expenses/{expenseId}/delete', static function (string $expenseId): never {
+    (new AccountantMiddleware())->handle();
+    (new ExpenseController())->delete($expenseId);
+});
+
 $router->post('/api/admin/events/create', static function (): never {
     (new AdminMiddleware())->handle();
     (new EventController())->create();
@@ -261,6 +297,56 @@ $router->get('/api/admin/media', static function (): never {
 $router->get('/api/admin/media/{itemId}', static function (string $itemId): never {
     (new AdminMiddleware())->handle();
     (new MediaController())->show($itemId);
+});
+
+$router->get('/api/admin/stall-applications', static function (): never {
+    (new AdminMiddleware())->handle();
+    (new StallApplicationController())->index();
+});
+
+$router->get('/api/admin/stall-applications/{applicationId}', static function (string $applicationId): never {
+    (new AdminMiddleware())->handle();
+    (new StallApplicationController())->show($applicationId);
+});
+
+$router->post('/api/admin/stall-applications/create', static function (): never {
+    (new AdminMiddleware())->handle();
+    (new StallApplicationController())->create();
+});
+
+$router->post('/api/admin/stall-applications/{applicationId}/update', static function (string $applicationId): never {
+    (new AdminMiddleware())->handle();
+    (new StallApplicationController())->update($applicationId);
+});
+
+$router->post('/api/admin/stall-applications/{applicationId}/delete', static function (string $applicationId): never {
+    (new AdminMiddleware())->handle();
+    (new StallApplicationController())->delete($applicationId);
+});
+
+$router->get('/api/admin/volunteer-applications', static function (): never {
+    (new AdminMiddleware())->handle();
+    (new VolunteerApplicationController())->index();
+});
+
+$router->get('/api/admin/volunteer-applications/{applicationId}', static function (string $applicationId): never {
+    (new AdminMiddleware())->handle();
+    (new VolunteerApplicationController())->show($applicationId);
+});
+
+$router->post('/api/admin/volunteer-applications/create', static function (): never {
+    (new AdminMiddleware())->handle();
+    (new VolunteerApplicationController())->create();
+});
+
+$router->post('/api/admin/volunteer-applications/{applicationId}/update', static function (string $applicationId): never {
+    (new AdminMiddleware())->handle();
+    (new VolunteerApplicationController())->update($applicationId);
+});
+
+$router->post('/api/admin/volunteer-applications/{applicationId}/delete', static function (string $applicationId): never {
+    (new AdminMiddleware())->handle();
+    (new VolunteerApplicationController())->delete($applicationId);
 });
 
 $router->post('/api/admin/media/create', static function (): never {

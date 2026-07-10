@@ -1,0 +1,23 @@
+CREATE TABLE IF NOT EXISTS `stall_applications` (
+  `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  `full_name` VARCHAR(255) NOT NULL,
+  `business_name` VARCHAR(255) DEFAULT NULL,
+  `email` VARCHAR(255) DEFAULT NULL,
+  `phone` VARCHAR(50) NOT NULL,
+  `whatsapp` VARCHAR(50) DEFAULT NULL,
+  `city` VARCHAR(150) DEFAULT NULL,
+  `booth_type` VARCHAR(150) DEFAULT NULL,
+  `message` TEXT DEFAULT NULL,
+  `status` ENUM('new', 'contacted', 'approved', 'rejected') NOT NULL DEFAULT 'new',
+  `source` ENUM('website', 'admin') NOT NULL DEFAULT 'website',
+  `admin_notes` TEXT DEFAULT NULL,
+  `submitted_by_user_id` INT UNSIGNED DEFAULT NULL,
+  `deleted_at` TIMESTAMP NULL DEFAULT NULL,
+  `created_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT `fk_stall_applications_user` FOREIGN KEY (`submitted_by_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  INDEX `idx_stall_applications_status` (`status`),
+  INDEX `idx_stall_applications_source` (`source`),
+  INDEX `idx_stall_applications_phone` (`phone`),
+  INDEX `idx_stall_applications_deleted` (`deleted_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

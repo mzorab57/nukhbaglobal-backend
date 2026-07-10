@@ -32,7 +32,10 @@ final class ReportingService
                 SUM(CASE WHEN status = "success" THEN 1 ELSE 0 END) AS successful_payments,
                 SUM(CASE WHEN status = "failed" THEN 1 ELSE 0 END) AS failed_payments,
                 SUM(CASE WHEN status = "refunded" THEN 1 ELSE 0 END) AS refunded_payments,
-                COALESCE(SUM(CASE WHEN status = "success" THEN amount ELSE 0 END), 0) AS successful_payment_amount,
+                COALESCE(SUM(CASE
+                    WHEN status IN ("success", "refunded") THEN GREATEST(amount - COALESCE(refund_amount, 0), 0)
+                    ELSE 0
+                END), 0) AS successful_payment_amount,
                 COALESCE(SUM(CASE WHEN status = "pending" THEN amount ELSE 0 END), 0) AS pending_payment_amount
              FROM payments
              WHERE deleted_at IS NULL'

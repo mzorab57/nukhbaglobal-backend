@@ -12,6 +12,8 @@ DROP TABLE IF EXISTS `event_tickets`;
 DROP TABLE IF EXISTS `payments`;
 DROP TABLE IF EXISTS `order_items`;
 DROP TABLE IF EXISTS `orders`;
+DROP TABLE IF EXISTS `stall_applications`;
+DROP TABLE IF EXISTS `volunteer_applications`;
 DROP TABLE IF EXISTS `expenses`;
 DROP TABLE IF EXISTS `tickets`;
 DROP TABLE IF EXISTS `sub_events`;
@@ -321,4 +323,61 @@ CREATE TABLE `past_events` (
   `updated_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX `idx_past_events_deleted` (`deleted_at`),
   INDEX `idx_past_events_date` (`date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =========================================================================
+-- 14. STALL APPLICATIONS TABLE
+-- =========================================================================
+CREATE TABLE `stall_applications` (
+  `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  `full_name` VARCHAR(255) NOT NULL,
+  `business_name` VARCHAR(255) DEFAULT NULL,
+  `email` VARCHAR(255) DEFAULT NULL,
+  `phone` VARCHAR(50) NOT NULL,
+  `whatsapp` VARCHAR(50) DEFAULT NULL,
+  `city` VARCHAR(150) DEFAULT NULL,
+  `booth_type` VARCHAR(150) DEFAULT NULL,
+  `message` TEXT DEFAULT NULL,
+  `status` ENUM('new', 'contacted', 'approved', 'rejected') NOT NULL DEFAULT 'new',
+  `source` ENUM('website', 'admin') NOT NULL DEFAULT 'website',
+  `admin_notes` TEXT DEFAULT NULL,
+  `submitted_by_user_id` INT UNSIGNED DEFAULT NULL,
+  `deleted_at` TIMESTAMP NULL DEFAULT NULL,
+  `created_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT `fk_stall_applications_user` FOREIGN KEY (`submitted_by_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  INDEX `idx_stall_applications_status` (`status`),
+  INDEX `idx_stall_applications_source` (`source`),
+  INDEX `idx_stall_applications_phone` (`phone`),
+  INDEX `idx_stall_applications_deleted` (`deleted_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =========================================================================
+-- 15. VOLUNTEER APPLICATIONS TABLE
+-- =========================================================================
+CREATE TABLE `volunteer_applications` (
+  `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  `first_name` VARCHAR(150) NOT NULL,
+  `last_name` VARCHAR(150) NOT NULL,
+  `whatsapp_number` VARCHAR(50) NOT NULL,
+  `phone_number` VARCHAR(50) NOT NULL,
+  `age` TINYINT UNSIGNED NOT NULL,
+  `address` VARCHAR(255) NOT NULL,
+  `reason` TEXT NOT NULL,
+  `has_volunteered_before` ENUM('yes', 'no') NOT NULL DEFAULT 'no',
+  `experience` TEXT DEFAULT NULL,
+  `confirm_correct` TINYINT(1) NOT NULL DEFAULT 0,
+  `agree_rules` TINYINT(1) NOT NULL DEFAULT 0,
+  `status` ENUM('new', 'contacted', 'approved', 'rejected') NOT NULL DEFAULT 'new',
+  `source` ENUM('website', 'admin') NOT NULL DEFAULT 'website',
+  `admin_notes` TEXT DEFAULT NULL,
+  `submitted_by_user_id` INT UNSIGNED DEFAULT NULL,
+  `deleted_at` TIMESTAMP NULL DEFAULT NULL,
+  `created_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT `fk_volunteer_applications_user` FOREIGN KEY (`submitted_by_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  INDEX `idx_volunteer_applications_status` (`status`),
+  INDEX `idx_volunteer_applications_source` (`source`),
+  INDEX `idx_volunteer_applications_phone` (`phone_number`),
+  INDEX `idx_volunteer_applications_deleted` (`deleted_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
