@@ -14,6 +14,7 @@ use App\Controllers\ExpenseController;
 use App\Controllers\MediaController;
 use App\Controllers\OrderController;
 use App\Controllers\OfficeSaleController;
+use App\Controllers\PastEventController;
 use App\Controllers\PaymentController;
 use App\Controllers\ScanController;
 use App\Controllers\StallApplicationController;
@@ -97,6 +98,10 @@ $router->get('/api/catalog/cities', static function (): never {
 
 $router->get('/api/catalog/media', static function (): never {
     (new CatalogController())->media();
+});
+
+$router->get('/api/catalog/past-events', static function (): never {
+    (new PastEventController())->publicIndex();
 });
 
 $router->post('/api/stalls/applications', static function (): never {
@@ -222,6 +227,31 @@ $router->get('/api/admin/expenses', static function (): never {
 $router->get('/api/admin/expenses/{expenseId}', static function (string $expenseId): never {
     (new AccountantMiddleware())->handle();
     (new ExpenseController())->show($expenseId);
+});
+
+$router->get('/api/admin/past-events', static function (): never {
+    (new AdminMiddleware())->handle();
+    (new PastEventController())->index();
+});
+
+$router->get('/api/admin/past-events/{pastEventId}', static function (string $pastEventId): never {
+    (new AdminMiddleware())->handle();
+    (new PastEventController())->show($pastEventId);
+});
+
+$router->post('/api/admin/past-events/create', static function (): never {
+    (new AdminMiddleware())->handle();
+    (new PastEventController())->create();
+});
+
+$router->post('/api/admin/past-events/{pastEventId}/update', static function (string $pastEventId): never {
+    (new AdminMiddleware())->handle();
+    (new PastEventController())->update($pastEventId);
+});
+
+$router->post('/api/admin/past-events/{pastEventId}/delete', static function (string $pastEventId): never {
+    (new AdminMiddleware())->handle();
+    (new PastEventController())->delete($pastEventId);
 });
 
 $router->post('/api/admin/expenses/create', static function (): never {
